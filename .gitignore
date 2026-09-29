@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+ENV/
+.venv
+
+# Next.js / Node
+node_modules/
+.next/
+out/
+build/
+dist/
+.storybook-out
+.pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+npm-debug.log*
+
+# Environment & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Data & Logs
+*.log
+postgres_data/
+redis_data/
+prometheus_data/
+grafana_data/
+
+# Testing & Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ML Artifacts
+ml/models/*.joblib
+ml/models/*.pkl

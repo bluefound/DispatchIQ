@@ -1,0 +1,169 @@
+# ============================================================
+# DispatchIQ — Docker Compose
+# ============================================================
+# Development environment with all services
+# Usage: docker compose up -d
+
+services:
+  # ── PostgreSQL + PostGIS ──────────────────────────────────
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: dispatchiq-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dispatchiq}
+      POSTGRES_USER: ${POSTGRES_USER:-dispatchiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dispatchiq_secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dispatchiq} -d ${POSTGRES_DB:-dispatchiq}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dispatchiq
+
+  # ── Redis ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: dispatchiq-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - dispatchiq
+
+  # ── FastAPI Backend ───────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dispatchiq-backend
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --log-level info
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - dispatchiq
+
+  # ── Celery Worker ─────────────────────────────────────────
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dispatchiq-celery-worker
+    command: >
+      celery -A app.workers.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      --queues=dispatch,eta,anomaly,default
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - dispatchiq
+
+  # ── Celery Beat (Periodic Tasks) ─────────────────────────
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dispatchiq-celery-beat
+    command: >
+      celery -A app.workers.celery_app beat
+      --loglevel=info
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dispatchiq
+
+  # ── Next.js Frontend ──────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dispatchiq-frontend
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - dispatchiq
+
+  # ── Prometheus ────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: dispatchiq-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - dispatchiq
+
+  # ── Grafana ───────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: dispatchiq-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - dispatchiq
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  dispatchiq:
+    driver: bridge
